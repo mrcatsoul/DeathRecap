@@ -744,6 +744,7 @@ core:RegisterForEvent("PLAYER_ALIVE", core.HideDeathPopup)
 core:RegisterForEvent("RAISED_AS_GHOUL", core.HideDeathPopup)
 
 core:RegisterForEvent("PLAYER_DEAD", function()
+  print("|cFFee3322"..(LANG == "ruRU" and "Вы умерли" or "You died")..".|r |cff71d5ff|Haddon:"..ADDON_NAME.."_link|h[Death Recap]|h|r")
   if StaticPopup_FindVisible("DEATH") then
     lastDeathEvents = (AddDeath() == true)
     StaticPopup_Hide("DEATH")
@@ -784,3 +785,21 @@ core:RegisterForEvent("COMBAT_LOG_EVENT_UNFILTERED", function(_, timestamp, even
     AddEvent(timestamp, event, srcName, spellId, spellName, environmentalType, amount, overkill, school, resisted, blocked, absorbed)
   end
 )
+
+-- added 11.10.24 (mrcatsoul)
+do
+  DEFAULT_CHAT_FRAME:HookScript("OnHyperlinkClick", function(self, link, str, button, ...)
+    local linkType, arg1 = strsplit(":", link)
+    if linkType == "addon" and arg1 == ADDON_NAME.."_link" then
+      OpenRecap(select(2, HasEvents()))
+    end
+  end)
+end
+
+do
+	local old = ItemRefTooltip.SetHyperlink -- we have to hook this function since the default ChatFrame code assumes that all links except for player and channel links are valid arguments for this function
+	function ItemRefTooltip:SetHyperlink(link, ...)
+		if link:find(ADDON_NAME.."_link") then return end
+		return old(self, link, ...)
+	end
+end
