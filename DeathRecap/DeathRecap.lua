@@ -543,12 +543,12 @@ function OpenRecap(recapID)
   local deathEntry = self.DeathRecapEntry[1]
   local tombstoneIcon = deathEntry.tombstone
   if entry == deathEntry then
-    tombstoneIcon:SetPoint("RIGHT", deathEntry.DamageInfo.AmountLarge, "LEFT", -10, 0)
+    tombstoneIcon:SetPoint("RIGHT", deathEntry.DamageInfo.Amount, "LEFT", -15, 1)
   end
 
   self:Show()
   --DeathRecapScrollFrame
-  DeathRecapContentFrame:SetSize(320,math.max(DeathRecapFrame:GetHeight(),#deathEvents*20))
+  DeathRecapContentFrame:SetSize(400,math.max(DeathRecapFrame:GetHeight(),#deathEvents*20))
   --DeathRecapScrollFrame:SetSize(320,#deathEvents*32)
   --print(#deathEvents,#deathEvents*20,DeathRecapContentFrame:GetSize())
   --DeathRecapContentFrame:SetAllPoints(DeathRecapScrollFrame)
@@ -609,15 +609,19 @@ function CreateDeathRecapFrame()
   core.After(0.1, function() print("["..GetAddOnMetadata(ADDON_NAME, "Title").."] loaded. "..GetAddOnMetadata(ADDON_NAME, "Notes").."") end)
 
   DeathRecapFrame = CreateFrame("Frame", "DeathRecapFrame", UIParent)
-  DeathRecapFrame:SetBackdrop({
-    bgFile = [[Interface\DialogFrame\UI-DialogBox-Background-Dark]],
-    edgeFile = [[Interface\DialogFrame\UI-DialogBox-Border]],
-    edgeSize = 8,
-    insets = {left = 1, right = 1, top = 1, bottom = 1}
-  })
-  DeathRecapFrame:SetBackdropColor(0, 0, 1, 0.85)
+  DeathRecapFrame:SetBackdrop(StaticPopup1:GetBackdrop())
+  -- DeathRecapFrame:SetBackdrop({
+      -- bgFile = "Interface\\Buttons\\WHITE8x8",
+      -- edgeFile = "Interface\\Buttons\\WHITE8x8",
+      -- tile = true,
+      -- tileSize = 1,
+      -- edgeSize = 1,
+      -- insets = { left = 1, right = 1, top = 1, bottom = 1 }
+    -- })
+  DeathRecapFrame:SetBackdropColor(StaticPopup1:GetBackdropColor())
+  DeathRecapFrame:SetBackdropBorderColor(StaticPopup1:GetBackdropBorderColor())
   DeathRecapFrame:SetFrameStrata("HIGH")
-  DeathRecapFrame:SetSize(340, 326)
+  DeathRecapFrame:SetSize(440, 326)
   DeathRecapFrame:SetPoint("CENTER")
   DeathRecapFrame:SetMovable(true)
   DeathRecapFrame:Hide()
@@ -627,14 +631,14 @@ function CreateDeathRecapFrame()
   
   -- Создаем ScrollFrame внутри родительского фрейма
   local DeathRecapScrollFrame = CreateFrame("ScrollFrame", "DeathRecapScrollFrame", DeathRecapFrame, "UIPanelScrollFrameTemplate")
-  DeathRecapScrollFrame:SetSize(320, 240)  -- размер видимой области
-  DeathRecapScrollFrame:SetPoint("TOPLEFT", -8, -37)
+  DeathRecapScrollFrame:SetSize(400, 240)  -- размер видимой области
+  DeathRecapScrollFrame:SetPoint("LEFT", DeathRecapFrame, "LEFT", 5, 0)
   
   -- Создаем содержимое для прокрутки
   local DeathRecapContentFrame = CreateFrame("Frame", "DeathRecapContentFrame", DeathRecapFrame)
-  DeathRecapContentFrame:SetSize(320, 450)  -- размер контента больше, чем видимая область
-  --DeathRecapContentFrame:SetAllPoints(DeathRecapScrollFrame)
-  --DeathRecapContentFrame:SetPoint("center",DeathRecapFrame,"center")
+  DeathRecapContentFrame:SetSize(400, 450)  -- размер контента больше, чем видимая область
+  --DeathRecapContentFrame:SetAllPoints(DeathRecapFrame)
+  --DeathRecapContentFrame:SetPoint("center",DeathRecapFrame,"center",0,0)
   DeathRecapScrollFrame:SetScrollChild(DeathRecapContentFrame)
 
   do
@@ -660,7 +664,7 @@ function CreateDeathRecapFrame()
   end
   
   DeathRecapFrame.Title = DeathRecapFrame:CreateFontString("ARTWORK", nil, "GameFontNormalLarge")
-  DeathRecapFrame.Title:SetPoint("TOP", 0, -9)
+  DeathRecapFrame.Title:SetPoint("TOP", 0, -12)
   DeathRecapFrame.Title:SetText(""..(LANG == "ruRU" and "Детали смерти" or "Death Recap").."")
 
   DeathRecapFrame.Unavailable = DeathRecapFrame:CreateFontString("ARTWORK", nil, "GameFontNormal")
@@ -668,8 +672,9 @@ function CreateDeathRecapFrame()
   DeathRecapFrame.Unavailable:SetText(""..(LANG == "ruRU" and "Детали смерти недоступны" or "Death Recap unavailable")..".")
 
   DeathRecapFrame.CloseXButton = CreateFrame("Button", "$parentCloseXButton", DeathRecapFrame, "UIPanelCloseButton")
-  DeathRecapFrame.CloseXButton:SetSize(32, 32)
-  DeathRecapFrame.CloseXButton:SetPoint("TOPRIGHT", 2, 1)
+  DeathRecapFrame.CloseXButton:SetSize(30, 30)
+  --DeathRecapFrame.CloseXButton:SetPoint("TOPRIGHT", 2, 1)
+  DeathRecapFrame.CloseXButton:SetPoint("TOPRIGHT", -6, -6)
   DeathRecapFrame.CloseXButton:SetScript("OnClick", function(self) self:GetParent():Hide() end)
 
   DeathRecapFrame.DragButton = CreateFrame("Button", "$parentDragButton", DeathRecapFrame)
@@ -703,7 +708,7 @@ function CreateDeathRecapFrame()
     button.DamageInfo.AmountLarge:SetJustifyH("RIGHT")
     button.DamageInfo.AmountLarge:SetJustifyV("CENTER")
     button.DamageInfo.AmountLarge:SetSize(0, 32)
-    button.DamageInfo.AmountLarge:SetPoint("TOPRIGHT", 0, 0)
+    button.DamageInfo.AmountLarge:SetPoint("TOPRIGHT", 3, 0)
     button.DamageInfo.AmountLarge:SetTextColor(1, 0.07, 0.07, 1)
 
     button.SpellInfo = CreateFrame("Button", nil, button)
@@ -739,7 +744,7 @@ function CreateDeathRecapFrame()
       button:SetPoint("BOTTOM", DeathRecapContentFrame, "BOTTOM", 15, -500)
       button.tombstone = button:CreateTexture(nil, "ARTWORK")
       button.tombstone:SetSize(20, 20)
-      button.tombstone:SetPoint("RIGHT", button.DamageInfo.Amount, "LEFT", -10, 0)
+      button.tombstone:SetPoint("RIGHT", button.DamageInfo.Amount, "LEFT", -15, 1)
       button.tombstone:SetTexture("Interface\\LootFrame\\LootPanel-Icon")
     else
       --button:SetPoint("BOTTOM", DeathRecapFrame.DeathRecapEntry[i - 1], "TOP", 0, 14)
