@@ -22,6 +22,12 @@ local UnitHealth = UnitHealth
 local UnitHealthMax = UnitHealthMax
 local UnitIsDeadOrGhost = UnitIsDeadOrGhost
 local UseSoulstone = UseSoulstone
+local UnitClass = UnitClass
+local GetPlayerInfoByGUID = GetPlayerInfoByGUID
+local UnitInParty = UnitInParty
+local UnitInRaid = UnitInRaid
+local UnitGUID = UnitGUID
+local UnitName = UnitName
 
 local ACTION_SWING = ACTION_SWING
 local ARENA_SPECTATOR = ARENA_SPECTATOR
@@ -38,6 +44,7 @@ local lastDeathEvents
 local index = 0
 local deathList = {}
 local eventList = {}
+local settings = {}
 
 -- local functions
 local AddEvent
@@ -56,13 +63,13 @@ local select, next, type = select, next, type
 local tinsert, tremove = table.insert, table.remove
 local setmetatable = setmetatable
 
-local myClass = select(2, UnitClass("player"))
+local playerClass = select(2, UnitClass("player"))
 local LANG = GetLocale()
+local NUM_DEATH_RECAP_EVENTS = 20
 
 -------------------------------------------------------------------------------
 -- C_Timer mimic
 --
-
 do
 	local TickerPrototype = {}
 	local TickerMetatable = {__index = TickerPrototype}
@@ -207,6 +214,66 @@ do
 	core.CancelTimer = CancelTimer
 end
 
+-- color names 11.10.24 (mrcatsoul)
+local classColors = {
+  ["DEATHKNIGHT"] = "C41F3B",
+  ["DRUID"] = "FF7D0A",
+  ["HUNTER"] = "A9D271",
+  ["MAGE"] = "40C7EB",
+  ["PALADIN"] = "F58CBA",
+  ["PRIEST"] = "FFFFFF",
+  ["ROGUE"] = "FFF569",
+  ["SHAMAN"] = "0070DE",
+  ["WARLOCK"] = "8787ED",
+  ["WARRIOR"] = "C79C6E",
+}
+
+local function colorName(name,unitid,guid,unknownColor,hyperLink,chathyperLink)
+  local _name = (name and name:gsub("-.*$", "")) or (unitid and UnitName(unitid)) or (guid and select(6,GetPlayerInfoByGUID(guid))) or "UNKNOWN"
+  
+  local _class = (unitid and select(2,UnitClass(unitid))) or (guid and select(2,GetPlayerInfoByGUID(guid))) or (_name and _name~="" and _name~="UNKNOWN" and UnitIsPlayer(_name) and (UnitInParty(_name) or UnitInRaid(_name)) and select(2,UnitClass(_name)))
+
+  local _guid = guid or (unitid and UnitGUID(unitid)) or (_name and _name~="" and _name~="UNKNOWN" and UnitIsPlayer(_name) and (UnitInParty(_name) or UnitInRaid(_name)) and UnitGUID(_name))
+  
+  local _realm = (name and name:match("-(.+)")) or (guid and select(7,GetPlayerInfoByGUID(guid))) or (unitid and select(2,UnitName(unitid))) or (_name and _name~="" and _name~="UNKNOWN" and UnitIsPlayer(_name) and (UnitInParty(_name) or UnitInRaid(_name)) and select(2,UnitName(_name)))
+  
+  -- повторная попытка получить инфу
+  if not _guid and _name and _name~="" and _name~="UNKNOWN" and UnitIsPlayer(_name) and (UnitInParty(_name) or UnitInRaid(_name)) then
+    _guid=UnitGUID(_name)
+  end
+  
+  if not _class and _name and _name~="" and _name~="UNKNOWN" and UnitIsPlayer(_name) and (UnitInParty(_name) or UnitInRaid(_name)) then
+    _class=select(2,UnitClass(_name))
+  end
+  
+  if not _realm and _name and _name~="" and _name~="UNKNOWN" and UnitIsPlayer(_name) and (UnitInParty(_name) or UnitInRaid(_name)) then
+    _,_realm=select(2,UnitName(_name))
+  end
+  
+  local nameRealm
+  if _realm and _realm~="" then
+    nameRealm=_name.."-".._realm
+  else
+    nameRealm=_name
+  end
+
+  if hyperLink==nil then 
+    hyperLink=1 
+  end
+  
+  local classColor = _class and classColors[_class] or unknownColor or "989898"
+  
+  if hyperLink then
+    if chathyperLink and not (nameRealm:find("UNKNOWN")) and guid and (tonumber(guid:sub(5, 5), 16) % 8 == 0) then
+      _name = "|Hplayer:"..nameRealm.."|h"..nameRealm.."|h"
+    elseif guid then
+      _name = "|Hunit:" .. guid .. ":" .. nameRealm .. "|h" .. nameRealm .. "|h"
+    end
+  end
+  
+  return "|ccc"..classColor.._name.."|r"
+end
+
 function core:RegisterForEvent(event, callback, ...)
 	if not self.frame then
 		self.frame = CreateFrame("Frame")
@@ -222,13 +289,13 @@ function core:RegisterForEvent(event, callback, ...)
 	self.frame:RegisterEvent(event)
 end
 
-function AddEvent(timestamp, event, srcName, spellId, spellName, environmentalType, amount, overkill, school, resisted, blocked, absorbed)
+function AddEvent(timestamp, event, srcName, spellId, spellName, environmentalType, amount, overkill, school, resisted, blocked, absorbed, srcGuid, critical)
   if index > 0 and eventList[index].timestamp + 10 <= timestamp then
     index = 0
     twipe(eventList)
   end
 
-  if index < 5 then
+  if index < settings["NUM_DEATH_RECAP_EVENTS"] then
     index = index + 1
   else
     index = 1
@@ -254,6 +321,8 @@ function AddEvent(timestamp, event, srcName, spellId, spellName, environmentalTy
   eventList[index].absorbed = absorbed
   eventList[index].currentHP = UnitHealth("player")
   eventList[index].maxHP = UnitHealthMax("player")
+  eventList[index].srcGuid = srcGuid
+  eventList[index].critical = critical
 end
 
 function HasEvents()
@@ -300,11 +369,19 @@ function GetTableInfo(data)
 
   if event == "SWING_DAMAGE" then
     spellId = 6603
-    spellName = ACTION_SWING
-
+    --spellName = ACTION_SWING
+    spellName = GetSpellInfo(spellId)
+    texture = [=[Interface\icons\INV_Sword_04]=]
     nameIsNotSpell = true
   elseif event == "RANGE_DAMAGE" then
-    nameIsNotSpell = true
+    --spellId = 75
+    --spellName = ACTION_RANGED
+    if spellId == 75 then
+      texture = [=[Interface\icons\inv_weapon_bow_05]=] 
+    elseif spellId == 5019 then
+      texture = [=[Interface\icons\ability_shootwand]=] 
+    end
+    --nameIsNotSpell = true
   elseif event == "ENVIRONMENTAL_DAMAGE" then
     local environmentalType = data.environmentalType
     environmentalType = strupper(environmentalType)
@@ -333,9 +410,10 @@ function GetTableInfo(data)
   end
 
   if spellId and not texture then
-    texture = select(3, GetSpellInfo(spellId))
+    texture = select(3, GetSpellInfo(spellId)) or [=[Interface\icons\INV_Misc_QuestionMark]=]
   end
-
+  
+  --print(spellId, spellName, texture)
   return spellId, spellName, texture
 end
 
@@ -355,7 +433,7 @@ function OpenRecap(recapID)
   self.recapID = recapID
 
   if not deathEvents or #deathEvents <= 0 then
-    for i = 1, 5 do
+    for i = 1, settings["NUM_DEATH_RECAP_EVENTS"] do
       self.DeathRecapEntry[i]:Hide()
     end
 
@@ -373,6 +451,12 @@ function OpenRecap(recapID)
     local dmgInfo = entry.DamageInfo
     local evtData = deathEvents[i]
     local spellId, spellName, texture = GetTableInfo(evtData)
+    
+    if i == 1 then
+      entry:SetPoint("BOTTOM", DeathRecapContentFrame, "BOTTOM", 15, -(#deathEvents*20))
+    else
+      entry:SetPoint("TOP", DeathRecapFrame.DeathRecapEntry[i - 1], "TOP", 0, 40)
+    end
 
     entry:Show()
     self.DeathTimeStamp = self.DeathTimeStamp or evtData.timestamp
@@ -382,10 +466,10 @@ function OpenRecap(recapID)
       dmgInfo.Amount:SetText(amountStr)
       dmgInfo.AmountLarge:SetText(amountStr)
       dmgInfo.amount = evtData.amount
-
+      
       dmgInfo.dmgExtraStr = ""
       if evtData.overkill and evtData.overkill > 0 then
-        dmgInfo.dmgExtraStr = format("(%d "..(LANG == "ruRU" and "излишнего" or "Overkill")..")", evtData.overkill)
+        dmgInfo.dmgExtraStr = format("(%d "..(LANG == "ruRU" and "избыточного" or "Overkill")..")", evtData.overkill)
         dmgInfo.amount = evtData.amount - evtData.overkill
       end
       if evtData.absorbed and evtData.absorbed > 0 then
@@ -406,8 +490,14 @@ function OpenRecap(recapID)
         highestDmgAmount = evtData.amount
       end
 
-      dmgInfo.Amount:Show()
-      dmgInfo.AmountLarge:Hide()
+      if evtData.critical then
+        dmgInfo.critical = evtData.critical
+        dmgInfo.Amount:Hide()
+        dmgInfo.AmountLarge:Show()
+      else
+        dmgInfo.Amount:Show()
+        dmgInfo.AmountLarge:Hide()
+      end
     else
       dmgInfo.Amount:SetText("")
       dmgInfo.AmountLarge:SetText("")
@@ -421,6 +511,7 @@ function OpenRecap(recapID)
     dmgInfo.spellName = spellName
 
     dmgInfo.caster = evtData.srcName or COMBATLOG_UNKNOWN_UNIT
+    dmgInfo.casterGuid = evtData.srcGuid
 
     if evtData.school and evtData.school > 1 then
       local colorArray = CombatLog_Color_ColorArrayBySchool(evtData.school)
@@ -431,7 +522,7 @@ function OpenRecap(recapID)
 
     dmgInfo.school = evtData.school
 
-    entry.SpellInfo.Caster:SetText(dmgInfo.caster)
+    entry.SpellInfo.Caster:SetText((LANG == "ruRU" and "от" or "by").." "..colorName(dmgInfo.caster,nil,dmgInfo.casterGuid))
 
     entry.SpellInfo.Name:SetText(spellName)
     entry.SpellInfo.Icon:SetTexture(texture)
@@ -444,10 +535,10 @@ function OpenRecap(recapID)
   end
 
   local entry = self.DeathRecapEntry[highestDmgIdx]
-  if entry.DamageInfo.amount then
-    entry.DamageInfo.Amount:Hide()
-    entry.DamageInfo.AmountLarge:Show()
-  end
+  -- if entry.DamageInfo.amount then
+    -- entry.DamageInfo.Amount:Hide()
+    -- entry.DamageInfo.AmountLarge:Show()
+  -- end
 
   local deathEntry = self.DeathRecapEntry[1]
   local tombstoneIcon = deathEntry.tombstone
@@ -456,12 +547,25 @@ function OpenRecap(recapID)
   end
 
   self:Show()
+  --DeathRecapScrollFrame
+  DeathRecapContentFrame:SetSize(320,math.max(DeathRecapFrame:GetHeight(),#deathEvents*20))
+  --DeathRecapScrollFrame:SetSize(320,#deathEvents*32)
+  --print(#deathEvents,#deathEvents*20,DeathRecapContentFrame:GetSize())
+  --DeathRecapContentFrame:SetAllPoints(DeathRecapScrollFrame)
 end
-
+--/run print(DeathRecapContentFrame:GetSize())
+--/run DeathRecapContentFrame:SetSize(320,140)
 function Spell_OnEnter(self)
-  if self.spellId then
-    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetHyperlink(GetSpellLink(self.spellId))
+  --print("Spell_OnEnter")
+  local spellId = self.spellId
+  local frame = self
+  if not spellId then
+    spellId = self:GetParent().spellId
+    frame = self:GetParent()
+  end
+  if spellId then
+    GameTooltip:SetOwner(frame, "ANCHOR_RIGHT")
+    GameTooltip:SetHyperlink(GetSpellLink(spellId))
     GameTooltip:Show()
   end
 end
@@ -472,12 +576,16 @@ function Amount_OnEnter(self)
 
   if self.amount then
     local valueStr = self.school and format(TEXT_MODE_A_STRING_VALUE_SCHOOL, self.amount, CombatLog_String_SchoolString(self.school)) or self.amount
+    if self.critical then
+      --print(self.critical)
+      valueStr = valueStr .. " " .. (LANG == "ruRU" and "[КРИТ]" or "[CRIT]")
+    end
     GameTooltip:AddLine(format("%s %s", valueStr, self.dmgExtraStr), 1, 0, 0, false)
   end
 
   if self.spellName then
     if self.caster then
-      GameTooltip:AddLine(format("%s "..(LANG == "ruRU" and "от" or "by").." %s", self.spellName, self.caster), 1, 1, 1, true)
+      GameTooltip:AddLine(format("%s "..(LANG == "ruRU" and "от" or "by").." %s", self.spellName, colorName(self.caster,nil,self.casterGuid)), 1, 1, 1, true)
     else
       GameTooltip:AddLine(self.spellName, 1, 1, 1, true)
     end
@@ -498,7 +606,7 @@ function CreateDeathRecapFrame()
     return
   end
   
-  core.After(0.1, function() print(""..GetAddOnMetadata(ADDON_NAME, "Title").." loaded. "..GetAddOnMetadata(ADDON_NAME, "Notes").."") end)
+  core.After(0.1, function() print("["..GetAddOnMetadata(ADDON_NAME, "Title").."] loaded. "..GetAddOnMetadata(ADDON_NAME, "Notes").."") end)
 
   DeathRecapFrame = CreateFrame("Frame", "DeathRecapFrame", UIParent)
   DeathRecapFrame:SetBackdrop({
@@ -514,17 +622,52 @@ function CreateDeathRecapFrame()
   DeathRecapFrame:SetMovable(true)
   DeathRecapFrame:Hide()
   DeathRecapFrame:SetScript("OnHide", function(self) self.recapID = nil end)
-  tinsert(UISpecialFrames, DeathRecapFrame:GetName())
 
+  tinsert(UISpecialFrames, DeathRecapFrame:GetName())
+  
+  -- Создаем ScrollFrame внутри родительского фрейма
+  local DeathRecapScrollFrame = CreateFrame("ScrollFrame", "DeathRecapScrollFrame", DeathRecapFrame, "UIPanelScrollFrameTemplate")
+  DeathRecapScrollFrame:SetSize(320, 240)  -- размер видимой области
+  DeathRecapScrollFrame:SetPoint("TOPLEFT", -8, -37)
+  
+  -- Создаем содержимое для прокрутки
+  local DeathRecapContentFrame = CreateFrame("Frame", "DeathRecapContentFrame", DeathRecapFrame)
+  DeathRecapContentFrame:SetSize(320, 450)  -- размер контента больше, чем видимая область
+  --DeathRecapContentFrame:SetAllPoints(DeathRecapScrollFrame)
+  --DeathRecapContentFrame:SetPoint("center",DeathRecapFrame,"center")
+  DeathRecapScrollFrame:SetScrollChild(DeathRecapContentFrame)
+
+  do
+    local t=0
+    -- Устанавливаем ползунок в самый низ при появлении фрейма
+    DeathRecapFrame:SetScript("OnShow", function()
+        core.After(0.1, function()
+          DeathRecapFrame:SetScript("OnUpdate", function(self, elapsed)
+              -- t=t+elapsed
+              -- if t<0.1 then return end
+              -- t=0
+              if DeathRecapScrollFrameScrollBarScrollDownButton:IsEnabled()==1 then
+                --DeathRecapScrollFrameScrollBarScrollDownButton:Click()
+                t=t+0,7
+                DeathRecapScrollFrame:SetVerticalScroll(DeathRecapScrollFrame:GetVerticalScroll()+30-math.min(t,25))
+              else
+                DeathRecapFrame:SetScript("OnUpdate", nil) -- Отключаем после прокрутки
+                t=0
+              end
+          end)
+        end)
+    end)
+  end
+  
   DeathRecapFrame.Title = DeathRecapFrame:CreateFontString("ARTWORK", nil, "GameFontNormalLarge")
   DeathRecapFrame.Title:SetPoint("TOP", 0, -9)
-  DeathRecapFrame.Title:SetText("Death Recap")
+  DeathRecapFrame.Title:SetText(""..(LANG == "ruRU" and "Детали смерти" or "Death Recap").."")
 
   DeathRecapFrame.Unavailable = DeathRecapFrame:CreateFontString("ARTWORK", nil, "GameFontNormal")
   DeathRecapFrame.Unavailable:SetPoint("CENTER")
-  DeathRecapFrame.Unavailable:SetText("Death Recap unavailable.")
+  DeathRecapFrame.Unavailable:SetText(""..(LANG == "ruRU" and "Детали смерти недоступны" or "Death Recap unavailable")..".")
 
-  DeathRecapFrame.CloseXButton = CreateFrame("Button", "$parentCloseXButton", DeathRecapFrame)
+  DeathRecapFrame.CloseXButton = CreateFrame("Button", "$parentCloseXButton", DeathRecapFrame, "UIPanelCloseButton")
   DeathRecapFrame.CloseXButton:SetSize(32, 32)
   DeathRecapFrame.CloseXButton:SetPoint("TOPRIGHT", 2, 1)
   DeathRecapFrame.CloseXButton:SetScript("OnClick", function(self) self:GetParent():Hide() end)
@@ -538,8 +681,8 @@ function CreateDeathRecapFrame()
 
   DeathRecapFrame.DeathRecapEntry = {}
 
-  for i = 1, 5 do
-    local button = CreateFrame("Frame", nil, DeathRecapFrame)
+  for i = 1, settings["NUM_DEATH_RECAP_EVENTS"] do
+    local button = CreateFrame("Frame", nil, DeathRecapContentFrame)
     button:SetSize(308, 32)
     DeathRecapFrame.DeathRecapEntry[i] = button
 
@@ -576,6 +719,8 @@ function CreateDeathRecapFrame()
     button.SpellInfo.Icon = button.SpellInfo:CreateTexture(nil, "ARTWORK")
     button.SpellInfo.Icon:SetParent(button.SpellInfo.FrameIcon)
     button.SpellInfo.Icon:SetAllPoints(true)
+    button.SpellInfo.FrameIcon:SetScript("OnEnter", Spell_OnEnter)
+    button.SpellInfo.FrameIcon:SetScript("OnLeave", GameTooltip_Hide)
 
     button.SpellInfo.Name = button.SpellInfo:CreateFontString("ARTWORK", nil, "GameFontNormal")
     button.SpellInfo.Name:SetJustifyH("LEFT")
@@ -591,34 +736,35 @@ function CreateDeathRecapFrame()
     button.SpellInfo.Caster:SetTextColor(0.5, 0.5, 0.5, 1)
 
     if i == 1 then
-      button:SetPoint("BOTTOMLEFT", 16, 64)
+      button:SetPoint("BOTTOM", DeathRecapContentFrame, "BOTTOM", 15, -500)
       button.tombstone = button:CreateTexture(nil, "ARTWORK")
       button.tombstone:SetSize(20, 20)
       button.tombstone:SetPoint("RIGHT", button.DamageInfo.Amount, "LEFT", -10, 0)
-      button.tombstone:SetTexture("Interface\\Icons\\Ability_Rogue_FeignDeath")
+      button.tombstone:SetTexture("Interface\\LootFrame\\LootPanel-Icon")
     else
-      button:SetPoint("BOTTOM", DeathRecapFrame.DeathRecapEntry[i - 1], "TOP", 0, 14)
+      --button:SetPoint("BOTTOM", DeathRecapFrame.DeathRecapEntry[i - 1], "TOP", 0, 14)
+      button:SetPoint("TOP", DeathRecapFrame.DeathRecapEntry[i - 1], "TOP", 0, 40)
     end
   end
 
-  local closebutton = CreateFrame("Button", "DeathRecapFrameCloseButton", DeathRecapFrame, "UIPanelButtonTemplate")
+  local closebutton = CreateFrame("Button", "$parentCloseButton", DeathRecapFrame, "UIPanelButtonTemplate")
   closebutton:SetSize(144, 21)
   closebutton:SetPoint("BOTTOM", 0, 15)
   closebutton:SetText(CLOSE)
-  closebutton:SetScript("OnClick", function(self) DeathRecapFrame:Hide() end)
-
+  closebutton:SetScript("OnClick", function(self) self:GetParent():Hide() end)
+  
   -- replace blizzard default
   StaticPopupDialogs["DeathRecapPopup"] = {
     text = DEATH_RELEASE_TIMER,
     button1 = DEATH_RELEASE,
     button2 = USE_SOULSTONE,
-    button3 = "Death Recap",
+    button3 = ""..(LANG == "ruRU" and "Детали смерти" or "Death Recap").."",
     OnShow = function(self)
       self.timeleft = GetReleaseTimeRemaining()
       local text = HasSoulstone()
       if text then
         self.button2:SetText(text)
-      elseif myClass ~= "SHAMAN" then
+      elseif playerClass ~= "SHAMAN" then
         self.fixme = true
       end
 
@@ -635,7 +781,7 @@ function CreateDeathRecapFrame()
         self.button3:Disable()
         self.button3:SetScript("OnEnter", function(self)
           GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
-          GameTooltip:SetText("Death Recap unavailable.")
+          GameTooltip:SetText(""..(LANG == "ruRU" and "Детали смерти недоступны" or "Death Recap unavailable")..".")
           GameTooltip:Show()
         end)
         self.button3:SetScript("OnLeave", GameTooltip_Hide)
@@ -735,6 +881,7 @@ end
 core:RegisterForEvent("PLAYER_LOGIN", CreateDeathRecapFrame)
 
 function core:HideDeathPopup()
+  playerClass = select(2, UnitClass("player"))
   StaticPopup_Hide("DeathRecapPopup")
 end
 
@@ -742,9 +889,19 @@ core:RegisterForEvent("PLAYER_ENTERING_WORLD", core.HideDeathPopup)
 core:RegisterForEvent("RESURRECT_REQUEST", core.HideDeathPopup)
 core:RegisterForEvent("PLAYER_ALIVE", core.HideDeathPopup)
 core:RegisterForEvent("RAISED_AS_GHOUL", core.HideDeathPopup)
+core:RegisterForEvent("ADDON_LOADED", function(_,addon) 
+  if addon==ADDON_NAME then
+    settings=DeathRecap_Settings
+    if settings == nil then 
+      DeathRecap_Settings = {}
+      settings = DeathRecap_Settings
+      settings["NUM_DEATH_RECAP_EVENTS"]=NUM_DEATH_RECAP_EVENTS
+    end
+  end
+end)
 
 core:RegisterForEvent("PLAYER_DEAD", function()
-  print("|cFFee3322"..(LANG == "ruRU" and "Вы умерли" or "You died")..".|r |cff71d5ff|Haddon:"..ADDON_NAME.."_link|h[Death Recap]|h|r")
+  print("" .. COMBATLOG_ICON_RAIDTARGET8 .. " |cFFee3322"..(LANG == "ruRU" and "Вы погибли" or "You died")..".|r |cff71d5ff|Haddon:"..ADDON_NAME.."_link|h["..(LANG == "ruRU" and "Детали смерти" or "Death Recap").."]|h|r")
   if StaticPopup_FindVisible("DEATH") then
     lastDeathEvents = (AddDeath() == true)
     StaticPopup_Hide("DEATH")
@@ -762,31 +919,31 @@ local validEvents = {
   SWING_DAMAGE = true
 }
 
-core:RegisterForEvent("COMBAT_LOG_EVENT_UNFILTERED", function(_, timestamp, event, _, srcName, srcFlags, dstGUID, dstName, dstFlags, ...)
+core:RegisterForEvent("COMBAT_LOG_EVENT_UNFILTERED", function(_, timestamp, event, srcGuid, srcName, srcFlags, dstGUID, dstName, dstFlags, ...)
     if (band(dstFlags, COMBATLOG_FILTER_ME) ~= COMBATLOG_FILTER_ME) or (band(srcFlags, COMBATLOG_FILTER_ME) == COMBATLOG_FILTER_ME) or (not validEvents[event]) then
       return
     end
 
-    local subVal = strsub(event, 1, 5)
-    local environmentalType, spellId, spellName, amount, overkill, school, resisted, blocked, absorbed
-
+    --local subVal = strsub(event, 1, 5)
+    local environmentalType, spellId, spellName, amount, overkill, school, resisted, blocked, absorbed, critical
+    --print(subVal)
     if event == "SWING_DAMAGE" then
-      amount, overkill, school, resisted, blocked, absorbed = ...
-    elseif subVal == "SPELL" then
-      spellId, spellName, _, amount, overkill, school, resisted, blocked, absorbed = ...
+      amount, overkill, school, resisted, blocked, absorbed, critical = ...
     elseif event == "ENVIRONMENTAL_DAMAGE" then
       environmentalType, amount, overkill, school, resisted, blocked, absorbed = ...
+    else--if subVal == "SPELL" then
+      spellId, spellName, _, amount, overkill, school, resisted, blocked, absorbed, critical = ...
     end
 
     if not tonumber(amount) then
       return
     end
 
-    AddEvent(timestamp, event, srcName, spellId, spellName, environmentalType, amount, overkill, school, resisted, blocked, absorbed)
+    AddEvent(timestamp, event, srcName, spellId, spellName, environmentalType, amount, overkill, school, resisted, blocked, absorbed, srcGuid, critical)
   end
 )
 
--- added 11.10.24 (mrcatsoul)
+-- chat link 11.10.24 (mrcatsoul)
 do
   DEFAULT_CHAT_FRAME:HookScript("OnHyperlinkClick", function(self, link, str, button, ...)
     local linkType, arg1 = strsplit(":", link)
@@ -802,4 +959,73 @@ do
 		if link:find(ADDON_NAME.."_link") then return end
 		return old(self, link, ...)
 	end
+end
+
+do
+  local settingsFrame = CreateFrame("Frame", "DeathRecapSettingsFrame", UIParent, "OptionsBoxTemplate")
+  settingsFrame.name = GetAddOnMetadata(ADDON_NAME, "Title") 
+  settingsFrame:Hide()
+
+  local settingsTitleText = settingsFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+  settingsTitleText:SetPoint("TOPLEFT", 16, -16)
+  settingsTitleText:SetText(""..ADDON_NAME.." Settings")
+
+  local editBox = CreateFrame("EditBox",nil,settingsFrame,"InputBoxTemplate") 
+  editBox:SetPoint("TOPLEFT", settingsTitleText, "BOTTOMLEFT", 6, -12)
+  editBox:SetAutoFocus(false)
+  editBox:SetSize(30,12)
+  editBox:SetFont(GameFontNormal:GetFont(), 12)
+  editBox:SetText("")
+  editBox:SetTextColor(1,1,1)
+  
+  local textFrame = CreateFrame("Button",nil,editBox) 
+  local text = textFrame:CreateFontString(nil, "ARTWORK") 
+  text:SetFont(GameFontNormal:GetFont(), 14)
+  text:SetText("NUM_DEATH_RECAP_EVENTS")
+  textFrame:SetSize(text:GetStringWidth()+50,text:GetStringHeight()) 
+  textFrame:SetPoint("LEFT", editBox, "RIGHT", 3, 0)
+  text:SetAllPoints(textFrame)
+  text:SetJustifyH("LEFT")
+  text:SetJustifyV("BOTTOM")
+  
+  editBox:SetScript('OnEnterPressed', function(self) 
+    local num=self:GetNumber()
+    if num and num>=1 and num<=100 then
+      settings["NUM_DEATH_RECAP_EVENTS"]=num
+      self:SetText(num)
+    else
+      self:SetText(settings["NUM_DEATH_RECAP_EVENTS"])
+    end
+    self:ClearFocus() 
+  end)
+  
+  editBox:SetScript('OnEditFocusLost', function(self) 
+    local num=self:GetNumber()
+    if num and num>=1 and num<=100 then
+      settings["NUM_DEATH_RECAP_EVENTS"]=num
+      self:SetText(num)
+    else
+      self:SetText(settings["NUM_DEATH_RECAP_EVENTS"])
+    end
+  end)
+
+  editBox:SetScript('OnEscapePressed', function(self) 
+    self:SetText(settings["NUM_DEATH_RECAP_EVENTS"])
+    self:ClearFocus() 
+  end)
+  
+  editBox:SetScript('OnEditFocusGained', function(self) 
+    text:SetTextColor(1, 1, 1) 
+  end)
+  
+  editBox:SetScript("OnShow", function(self) 
+    textFrame:Enable()       
+    text:SetTextColor(1, 1, 1) 
+    if not self:HasFocus() then 
+      self:SetText(settings["NUM_DEATH_RECAP_EVENTS"]) 
+    end 
+  end)
+
+  -- Регистрация страницы опций
+  InterfaceOptions_AddCategory(settingsFrame)
 end
