@@ -1,7 +1,7 @@
 ## Interface: 30300
-## Title: DeathRecap
-## Source: https://github.com/bkader/KPack
-## Notes: Extracted from |cFF22ddcchttps://github.com/bkader/KPack|r by some random guy |cFF22ffaa(t.me/mrcatsoul, youtube.com/mrcatsoul, github.com/mrcatsoul,|r |cffC41F3BTombstalker|r/|cffffffffМораль|r/|cffC41F3BMoriarty|r |cFF22ffaa@ wowcircle wotlk x5)|r
-## NotesNoFormat: Extracted from https://github.com/bkader/KPack by some random guy (t.me/mrcatsoul, youtube.com/mrcatsoul, github.com/mrcatsoul)
+## Title: |cFF22ddccDeath Recap|r
+## Notes: Extracted from KPack|cFF22ddcc(https://github.com/bkader/KPack)|r and improved by fixing some bugs by some random guy|cFF22ffaa(t.me/mrcatsoul, youtube.com/mrcatsoul, github.com/mrcatsoul,|r |cffC41F3BTombstalker|r/|cffffffffМораль|r/|cffC41F3BMoriarty|r @ wowcircle wotlk x5)
+## Info: Extracted from KPack(https://github.com/bkader/KPack) and improved by fixing some bugs by some random guy(t.me/mrcatsoul, youtube.com/mrcatsoul, github.com/mrcatsoul)
+## SavedVariables: DeathRecap_Settings
 
 DeathRecap.lua
